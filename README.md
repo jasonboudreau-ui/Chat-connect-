@@ -1,9 +1,8 @@
 # CRM Chat (proof of concept)
 
-Team chat where nobody signs up. People come from the directory a company already keeps: HubSpot, Salesforce,
-Google Workspace, or any other source behind the same small interface. Connect a directory and everyone in it can
-sign in; their teams, departments and roles become channels that stay in sync; someone removed from the CRM loses
-access on their next request while their messages stay.
+Team chat where nobody signs up and nothing about people is kept. Everyone logs in with the account their company
+already gives them (Google, Microsoft, Salesforce, HubSpot or Werdna), and that company's own system checks the
+password and says who they are. Each company gets its own chat, walled off from every other.
 
 A standalone web app with no dependencies: Node's own HTTP server, plain HTML and JS, nothing to install.
 
@@ -14,49 +13,62 @@ node src/main.ts            # Node 22.18+ (runs the TypeScript directly)
 # open http://localhost:4310 and sign in as anyone from the demo company
 ```
 
-With no directory configured it connects a made-up ten-person company, so it runs with no credentials. Open two
-browser windows as two people to see messages, DMs and presence arrive live.
+With no provider set up, only the made-up ten-person demo company is offered, so it runs with no credentials. Open
+two browser windows as two people to see messages, DMs and presence arrive live.
 
-Tests: `node --test "test/*.test.ts"` (22 tests, no network, no database).
+Tests: `node --test "test/*.test.ts"` (34 tests, no network, no database).
 
-## Connecting a real directory
+## Switching on "Log in with"
 
-From the gear icon in the app (on the machine running it, or with `ADMIN_TOKEN` set and entered), pick a directory,
-paste its credentials, and it reads every person before saving. Behind a proxy (Replit included) every request looks
-local, so set `ADMIN_TOKEN` anywhere but your own machine. A connection that cannot read its directory is not
-kept, and the error says why. Or set them in the environment and it comes up connected:
+Each provider needs this app registered with it once, which gives a client id and secret. Set them in the
+environment; a provider without its settings is simply not offered. Register the way back as
+`<PUBLIC_URL>/auth/<provider>/callback`, for example `https://chat.example.com/auth/google/callback`.
 
-| Directory | Environment | What to create |
+| Log in with | Environment | Where to register |
 |---|---|---|
-| HubSpot | `HUBSPOT_ACCESS_TOKEN` | A private app with `crm.objects.owners.read` |
-| Salesforce | `SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN` | A connected app token with the `api` scope |
-| Google Workspace | `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_ADMIN_EMAIL`, optional `GOOGLE_DOMAIN` | A service account with domain-wide delegation for `admin.directory.user.readonly` |
+| Google (Workspace) | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google Cloud console: an OAuth client of type "Web application" |
+| Microsoft (Entra ID, Microsoft 365, Dynamics) | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | Microsoft Entra admin center: an app registration for accounts in any organizational directory |
+| Salesforce | `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET`, optional `SALESFORCE_LOGIN_URL` | Salesforce Setup: an external client app with the `openid`, `email` and `profile` scopes |
+| HubSpot | `HUBSPOT_CLIENT_ID`, `HUBSPOT_CLIENT_SECRET` | HubSpot developer account: a public app with the `oauth` scope |
+| Werdna | `WERDNA_URL` | Nothing: see below |
 
-Other settings: `PORT` (4310), `SYNC_MINUTES` (15; 0 turns re-sync off), `ADMIN_TOKEN`, `CRM_CHAT_DEMO=0` to skip the
-demo company.
+Other settings:
+- `PUBLIC_URL`: where people reach the app (default `http://localhost:<PORT>`).
+- `SESSION_SECRET`: signs the login cookie. Set it anywhere but a laptop, or a restart signs everyone out.
+- `PORT`: default 4310.
+- `CRM_CHAT_DEMO=0`: hide the demo company.
+
+Werdna has no "Log in with" for other apps yet; its OAuth server serves only its Claude connector. So Werdna users
+type their Werdna email and password on the chat's page, the chat passes them straight to Werdna's own login, and
+signs out of Werdna at once. Nothing is kept, but the password does pass through the chat's server; once Werdna
+offers "Log in with Werdna", it moves to the same button as the others.
 
 ## Adding another CRM
 
-One file implementing `DirectoryConnector` (`src/connectors/types.ts`) and one line in `src/connectors/index.ts`.
-A connector only answers "who are the people, one page at a time": id, email, name, title, teams, active. Its
-`fields` describe the connect form, so the UI needs no change. Pipedrive, Zoho, Dynamics, Okta or this CRM's own
-users table are each a page of code.
+One file implementing `RedirectProvider` (`src/signin/types.ts`) and one line in `src/signin/index.ts`. A provider
+builds its sign-in link and, given the code its page sends back, answers "who is this and which company". Any
+system that speaks OpenID Connect (Okta, Zoho, Auth0, Keycloak) follows `google.ts` with different addresses;
+plain OAuth ones follow `hubspot.ts`.
 
-## How identity works
+## How sign-in works
 
-- **The email is the join.** The same person in HubSpot and Google is one chat user with two sources.
-- **A sync applies all or nothing.** Every page is read first; a failure on any page changes nobody.
-- **Absent means deactivated, never deleted.** Someone gone from a directory keeps their messages. If they are still
-  in another connected directory they stay active.
-- **An empty answer is not believed.** A directory that had people and now returns none is reported, not applied;
-  a scope change is far likelier than everyone leaving.
-- **Credentials never go back to the browser.**
+- **The password is typed on the company's own page.** The chat gets back a one-time code, trades it for who the
+  person is, and drops the provider's tokens.
+- **The company is what the provider vouches for:** Google's workspace domain, Microsoft's tenant, the Salesforce
+  org, the HubSpot account, the Werdna site. Personal Gmail and Microsoft accounts have no company and are turned
+  away. A company reached through two providers is two chats: one provider never vouches for another's.
+- **The session is a signed cookie, not a server table.** It carries who you are and your company and lasts a
+  working day (12 hours). When it runs out you log in through your company again, and someone your company has
+  removed cannot.
+- **Login CSRF is blocked.** Each "Log in with" starts with a one-time state, nonce and PKCE secret in a short-lived
+  cookie; a way back this browser did not start is refused.
+- **People are listed once they have logged in.** The chat keeps no copy of a company's staff list.
 
 ## What this proof of concept does not do yet
 
-- **Real sign-in.** Sign-in trusts the email typed, which is fine on a laptop and not for anything shared. The next
-  step is "Sign in with Google / HubSpot / Salesforce" via OAuth, matching the verified email the same way.
-- **Persistence.** Everything is in memory and gone on restart. The shapes in `src/store.ts` map directly onto
-  tables (people, person_sources, connections, channels, messages) in Postgres.
-- **Credential storage.** Connected credentials live in process memory only; a real version encrypts them at rest.
+- **Saving messages.** Messages live in memory and are gone on restart. The decided next step is a database with
+  messages encrypted under a key per company.
+- **Teams as channels for real companies.** The demo company still has them. For others it needs a company admin to
+  approve read-only access to their directory once, rather than the chat holding an admin password.
+- **A live check while someone is signed in.** Removal takes effect when the 12-hour session ends.
 - Threads, reactions, files, search, notifications and unread counts across devices.
