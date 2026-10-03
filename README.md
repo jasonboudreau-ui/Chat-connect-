@@ -1,6 +1,6 @@
 # CRM Chat (proof of concept)
 
-Team chat where nobody signs up. People come from the directory a company already keeps: HubSpot, Salesforce,
+Team chat where nobody signs up. People come from the directory a company already keeps: Werdna, HubSpot, Salesforce,
 Google Workspace, or any other source behind the same small interface. Connect a directory and everyone in it can
 sign in; their teams, departments and roles become channels that stay in sync; someone removed from the CRM loses
 access on their next request while their messages stay.
@@ -28,6 +28,7 @@ kept, and the error says why. Or set them in the environment and it comes up con
 
 | Directory | Environment | What to create |
 |---|---|---|
+| Werdna | `WERDNA_URL`, `WERDNA_EMAIL`, `WERDNA_PASSWORD` | A Werdna account with admin access (C-suite also brings teams) |
 | HubSpot | `HUBSPOT_ACCESS_TOKEN` | A private app with `crm.objects.owners.read` |
 | Salesforce | `SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN` | A connected app token with the `api` scope |
 | Google Workspace | `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_ADMIN_EMAIL`, optional `GOOGLE_DOMAIN` | A service account with domain-wide delegation for `admin.directory.user.readonly` |

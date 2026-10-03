@@ -82,6 +82,7 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
 .src-salesforce.badge { background: #d7ecfb; color: #0b5c9a; }
 .src-google.badge { background: #dff3e4; color: #1d7a3a; }
 .src-demo.badge { background: #efe4fb; color: #6131a0; }
+.src-werdna.badge { background: #fbefcc; color: #13213f; }
 
 .avatar { --hue: 210; width: 36px; height: 36px; border-radius: 9px; display: inline-grid; place-items: center; flex: none; font-size: 13px; font-weight: 700; color: #fff; background: hsl(var(--hue) 45% 45%); overflow: hidden; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -128,6 +129,7 @@ dialog::backdrop { background: rgba(10, 15, 30, 0.5); }
 .card.src-salesforce { border-top-color: #00a1e0; }
 .card.src-google { border-top-color: #34a853; }
 .card.src-demo { border-top-color: #8e5bd6; }
+.card.src-werdna { border-top-color: #13213f; }
 #connector-form { margin-top: 18px; display: grid; gap: 12px; }
 #connector-form h3 { margin: 0; }
 .field { display: grid; gap: 4px; font-size: 14px; }
