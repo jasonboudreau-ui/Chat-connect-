@@ -9,22 +9,23 @@
 <body>
   <!-- Sign in: through the company's own system. Nobody signs up here, and no password is kept. -->
   <main id="signin" class="signin" hidden>
-    <div class="signin-card">
-      <div class="brand"><span class="logo">◆</span> CRM Chat</div>
-      <h1>Log in with your company account</h1>
-      <p class="muted">Use the account your company already gives you. Your password is checked by your company's own system and is never kept here.</p>
-      <p id="signin-error" class="error" hidden></p>
+    <div class="orbit">
+      <div class="mark" aria-hidden="true"><span>◆</span></div>
+      <h1 class="wordmark">CRM Chat</h1>
+      <p id="signin-error" class="signin-error" role="alert" hidden></p>
       <div id="signin-buttons" class="signin-buttons"></div>
       <form id="password-form" class="password-form" hidden>
-        <p class="muted small" id="password-help"></p>
-        <input id="password-email" type="email" placeholder="you@company.com" autocomplete="username" required />
-        <input id="password-password" type="password" placeholder="Password" autocomplete="current-password" required />
-        <button type="submit" id="password-submit">Log in</button>
+        <input id="password-email" type="email" placeholder="Email" autocomplete="username" aria-label="Email" required />
+        <div class="password-row">
+          <input id="password-password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required />
+          <button type="submit" id="password-submit" aria-label="Log in">→</button>
+        </div>
+        <button type="button" id="password-back" class="ghost">Back</button>
       </form>
-      <p id="signin-none" class="muted small" hidden>No company sign-in is set up yet. See the README to switch one on.</p>
-      <div id="demo-people" hidden>
-        <p class="muted small">Trying the demo? Sign in as someone from the made-up company:</p>
-        <div id="demo-list" class="chips"></div>
+      <p id="signin-none" class="signin-foot" hidden>No sign-in is set up yet.</p>
+      <div id="demo-people" class="demo" hidden>
+        <button type="button" id="demo-toggle" class="ghost">Try the demo</button>
+        <div id="demo-list" class="demo-list" hidden></div>
       </div>
     </div>
   </main>

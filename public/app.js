@@ -77,31 +77,46 @@ async function showSignin() {
   if (params.has("error")) history.replaceState(null, "", "/");
 
   const { providers, demo } = await api("/api/signin");
-  // "Log in with X" goes to X's own sign-in page, so these are plain links.
-  $("signin-buttons").replaceChildren(
-    ...providers
-      .filter((p) => p.kind === "redirect")
-      .map((p) => el("a", { class: `signin-btn src-${p.id}`, href: `/auth/${encodeURIComponent(p.id)}/start` }, `Log in with ${p.label}`)),
-  );
   passwordProvider = providers.find((p) => p.kind === "password") ?? null;
-  $("password-form").hidden = !passwordProvider;
-  if (passwordProvider) {
-    $("password-help").textContent = `Or log in with your ${passwordProvider.label} email and password. They go straight to ${passwordProvider.label} and are not kept here.`;
-    $("password-submit").textContent = `Log in with ${passwordProvider.label}`;
-  }
+  // One plain choice per company system. "Log in with X" goes to X's own page, so those are links; a password
+  // provider opens its two fields in place.
+  $("signin-buttons").replaceChildren(
+    ...providers.map((p) =>
+      p.kind === "redirect"
+        ? el("a", { class: `signin-btn src-${p.id}`, href: `/auth/${encodeURIComponent(p.id)}/start` }, p.label)
+        : el("button", { type: "button", class: `signin-btn src-${p.id}`, onclick: openPasswordForm }, p.label),
+    ),
+  );
+  $("signin-buttons").hidden = false;
+  $("password-form").hidden = true;
   $("signin-none").hidden = providers.length > 0 || demo;
 
-  $("demo-people").hidden = true;
+  $("demo-people").hidden = !demo;
+  $("demo-list").hidden = true;
   if (demo) {
     const people = await api("/api/demo-people").catch(() => []);
     $("demo-people").hidden = people.length === 0;
     $("demo-list").replaceChildren(
-      ...people.map((p) =>
-        el("button", { class: "chip", onclick: () => signIn("/api/session/demo", { email: p.email }) }, el("strong", {}, p.name), el("span", {}, p.title ?? "")),
-      ),
+      ...people.map((p) => el("button", { type: "button", class: "demo-person", title: p.title ?? "", onclick: () => signIn("/api/session/demo", { email: p.email }) }, p.name)),
     );
   }
 }
+
+function openPasswordForm() {
+  $("signin-buttons").hidden = true;
+  $("password-form").hidden = false;
+  $("password-email").placeholder = `${passwordProvider.label} email`;
+  $("password-email").focus();
+}
+
+$("demo-toggle").addEventListener("click", () => ($("demo-list").hidden = !$("demo-list").hidden));
+
+function closePasswordForm() {
+  $("password-form").hidden = true;
+  $("signin-buttons").hidden = false;
+}
+$("password-back").addEventListener("click", closePasswordForm);
+$("password-form").addEventListener("keydown", (e) => e.key === "Escape" && closePasswordForm());
 
 function showSigninError(message) {
   $("signin-error").textContent = message ?? "";
