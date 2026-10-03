@@ -99,6 +99,30 @@ export class Store {
     return undefined;
   }
 
+  /**
+   * Someone their company's own system just vouched for at sign-in. Held in memory while the app runs, never
+   * written anywhere; the next sign-in brings them back with whatever their company says then.
+   */
+  admit(u: { email: string; name: string; avatarUrl?: string }, provider: string): Person {
+    const email = u.email.trim().toLowerCase();
+    const source: PersonSource = { connectionId: `signin:${provider}`, connectorId: provider, externalId: email, teams: [], active: true };
+    const existing = this.personByEmail(email);
+    if (!existing) {
+      const person: Person = { id: randomUUID(), email, name: u.name, avatarUrl: u.avatarUrl, sources: [source] };
+      this.people.set(person.id, person);
+      this.emit({ type: "directory" });
+      return person;
+    }
+    const i = existing.sources.findIndex((s) => s.connectionId === source.connectionId);
+    const changed = i === -1 || !existing.sources[i].active || existing.name !== u.name || existing.avatarUrl !== u.avatarUrl;
+    if (i === -1) existing.sources.push(source);
+    else existing.sources[i] = source;
+    existing.name = u.name || existing.name;
+    existing.avatarUrl = u.avatarUrl ?? existing.avatarUrl;
+    if (changed) this.emit({ type: "directory" });
+    return existing;
+  }
+
   addConnection(connectorId: string, label: string, config: ConnectorConfig): Connection {
     const c: Connection = { id: randomUUID(), connectorId, label, config, createdAt: new Date().toISOString() };
     this.connections.set(c.id, c);

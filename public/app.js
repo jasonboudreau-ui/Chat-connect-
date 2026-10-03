@@ -1,7 +1,7 @@
 // CRM Chat UI. Plain JS, no build step. Every piece of user or directory text goes through textContent.
 
 const $ = (id) => document.getElementById(id);
-const SOURCE_LABEL = { werdna: "Werdna", hubspot: "HubSpot", salesforce: "Salesforce", google: "Google", demo: "Demo" };
+const SOURCE_LABEL = { werdna: "Werdna", hubspot: "HubSpot", salesforce: "Salesforce", google: "Google", microsoft: "Microsoft", demo: "Demo" };
 
 const state = {
   me: null,
@@ -26,18 +26,10 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-function adminHeaders() {
-  let token = "";
-  try {
-    token = sessionStorage.getItem("crmchat-admin") ?? "";
-  } catch {}
-  return token ? { "x-admin-token": token } : {};
-}
-
 async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(path, {
     method,
-    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...adminHeaders() },
+    headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -74,39 +66,73 @@ function channelLabel(c) {
 
 // ---------- sign in ----------
 
+let passwordProvider = null;
+
 async function showSignin() {
   $("app").hidden = true;
   $("signin").hidden = false;
-  try {
-    const people = await api("/api/demo-people");
+  // A failed "Log in with" comes back as ?error=...; show it once, then tidy the address bar.
+  const params = new URLSearchParams(location.search);
+  showSigninError(params.get("error"));
+  if (params.has("error")) history.replaceState(null, "", "/");
+
+  const { providers, demo } = await api("/api/signin");
+  // "Log in with X" goes to X's own sign-in page, so these are plain links.
+  $("signin-buttons").replaceChildren(
+    ...providers
+      .filter((p) => p.kind === "redirect")
+      .map((p) => el("a", { class: `signin-btn src-${p.id}`, href: `/auth/${encodeURIComponent(p.id)}/start` }, `Log in with ${p.label}`)),
+  );
+  passwordProvider = providers.find((p) => p.kind === "password") ?? null;
+  $("password-form").hidden = !passwordProvider;
+  if (passwordProvider) {
+    $("password-help").textContent = `Or log in with your ${passwordProvider.label} email and password. They go straight to ${passwordProvider.label} and are not kept here.`;
+    $("password-submit").textContent = `Log in with ${passwordProvider.label}`;
+  }
+  $("signin-none").hidden = providers.length > 0 || demo;
+
+  $("demo-people").hidden = true;
+  if (demo) {
+    const people = await api("/api/demo-people").catch(() => []);
     $("demo-people").hidden = people.length === 0;
     $("demo-list").replaceChildren(
       ...people.map((p) =>
-        el("button", { class: "chip", onclick: () => signIn(p.email) }, el("strong", {}, p.name), el("span", {}, p.title ?? "")),
+        el("button", { class: "chip", onclick: () => signIn("/api/session/demo", { email: p.email }) }, el("strong", {}, p.name), el("span", {}, p.title ?? "")),
       ),
     );
-  } catch {}
-}
-
-async function signIn(email) {
-  $("signin-error").hidden = true;
-  try {
-    state.me = await api("/api/session", { method: "POST", body: { email } });
-    await startApp();
-  } catch (err) {
-    $("signin-error").textContent = err.message;
-    $("signin-error").hidden = false;
   }
 }
 
-$("signin-form").addEventListener("submit", (e) => {
+function showSigninError(message) {
+  $("signin-error").textContent = message ?? "";
+  $("signin-error").hidden = !message;
+}
+
+async function signIn(path, body) {
+  showSigninError(null);
+  try {
+    state.me = await api(path, { method: "POST", body });
+    await startApp();
+  } catch (err) {
+    showSigninError(err.message);
+  }
+}
+
+$("password-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  signIn($("signin-email").value);
+  const button = $("password-submit");
+  button.disabled = true;
+  await signIn("/api/session/password", { provider: passwordProvider.id, email: $("password-email").value, password: $("password-password").value });
+  // The password leaves the page as soon as it has been used.
+  $("password-password").value = "";
+  button.disabled = false;
 });
 
 // ---------- app ----------
 
 async function loadDirectory() {
+  const me = await api("/api/me");
+  $("company").textContent = me.company ?? "";
   const { people, online } = await api("/api/people");
   state.people = new Map(people.map((p) => [p.id, p]));
   state.online = new Set(online);
@@ -162,6 +188,8 @@ function renderSidebar() {
   $("channels").replaceChildren(
     ...channels.filter((c) => c.kind === "custom" && matches(c.title)).sort((a, b) => a.title.localeCompare(b.title)).map((c) => item(c)),
   );
+  // Teams appear when the company's system names them; a company with none simply has no Teams section.
+  $("teams-head").hidden = !channels.some((c) => c.kind === "team");
   $("teams").replaceChildren(
     ...channels
       .filter((c) => c.kind === "team" && matches(c.title))
@@ -208,7 +236,7 @@ async function openChannel(id) {
   document.body.classList.remove("sidebar-open");
   $("channel-title").textContent = channelLabel(c);
   const sub = $("channel-sub");
-  if (c.kind === "team") sub.textContent = `${c.memberCount} people, kept in sync from your directories`;
+  if (c.kind === "team") sub.textContent = `${c.memberCount} people on this team`;
   else if (c.kind === "dm") {
     const p = state.people.get(c.peerId);
     sub.replaceChildren(p?.title ?? "", " ", ...(p ? sourceBadges(p.sources) : []));
@@ -344,135 +372,6 @@ function listen() {
     }
   };
 }
-
-// ---------- connect a directory ----------
-
-let connectorsCache = [];
-let chosen = null;
-
-async function openConnect() {
-  $("connect").showModal();
-  $("connector-form").hidden = true;
-  const admin = await api("/api/admin");
-  $("admin-token-row").hidden = !admin.tokenRequired;
-  connectorsCache = await api("/api/connectors");
-  $("connector-cards").replaceChildren(
-    ...connectorsCache.map((c) =>
-      el("button", { class: `card src-${c.id}`, onclick: () => chooseConnector(c) }, el("strong", {}, c.label), el("span", { class: "muted small" }, c.description)),
-    ),
-  );
-  await renderConnections();
-}
-
-function showConnectError(message) {
-  $("connect-error").textContent = message ?? "";
-  $("connect-error").hidden = !message;
-}
-
-async function renderConnections() {
-  showConnectError(null);
-  try {
-    const list = await api("/api/connections");
-    $("connections").replaceChildren(
-      ...(list.length === 0
-        ? [el("li", { class: "muted" }, "Nothing connected yet.")]
-        : list.map((c) =>
-            el(
-              "li",
-              { class: "connection" },
-              el("span", { class: `badge src-${c.connectorId}` }, c.connectorLabel),
-              el(
-                "div",
-                { class: "grow" },
-                el("strong", {}, `${c.people} people`),
-                el(
-                  "div",
-                  { class: `small ${c.lastSync?.ok === false ? "error" : "muted"}` },
-                  c.lastSync
-                    ? c.lastSync.ok
-                      ? `Synced ${new Date(c.lastSync.at).toLocaleString()}: ${c.lastSync.added} added, ${c.lastSync.updated} updated, ${c.lastSync.deactivated} removed`
-                      : `Last sync failed: ${c.lastSync.error}`
-                    : "",
-                ),
-              ),
-              el("button", { class: "link", onclick: () => syncNow(c.id) }, "Sync now"),
-              el("button", { class: "link danger", onclick: () => disconnect(c) }, "Disconnect"),
-            ),
-          )),
-    );
-  } catch (err) {
-    $("connections").replaceChildren();
-    showConnectError(err.message);
-  }
-}
-
-function chooseConnector(c) {
-  chosen = c;
-  $("connector-form").hidden = false;
-  $("connector-form-title").textContent = `Connect ${c.label}`;
-  $("connector-form-help").textContent = c.setupHelp;
-  $("connector-fields").replaceChildren(
-    ...c.fields.map((f) =>
-      el(
-        "label",
-        { class: "field" },
-        el("span", {}, f.label, f.required ? " *" : ""),
-        f.type === "textarea"
-          ? el("textarea", { name: f.key, rows: 4, placeholder: f.placeholder, required: f.required })
-          : el("input", { name: f.key, type: f.type, placeholder: f.placeholder, required: f.required, autocomplete: "off" }),
-        f.help ? el("span", { class: "muted small" }, f.help) : null,
-      ),
-    ),
-  );
-  $("connector-form").scrollIntoView({ behavior: "smooth" });
-}
-
-$("connector-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const config = Object.fromEntries(new FormData(e.target).entries());
-  const button = $("connector-submit");
-  button.disabled = true;
-  button.textContent = "Connecting…";
-  showConnectError(null);
-  try {
-    await api("/api/connections", { method: "POST", body: { connectorId: chosen.id, config } });
-    $("connector-form").hidden = true;
-    e.target.reset();
-    await renderConnections();
-  } catch (err) {
-    showConnectError(err.message);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Connect and import people";
-  }
-});
-
-async function syncNow(id) {
-  try {
-    await api(`/api/connections/${id}/sync`, { method: "POST" });
-  } catch (err) {
-    showConnectError(err.message);
-  }
-  await renderConnections();
-}
-
-async function disconnect(c) {
-  if (!confirm(`Disconnect ${c.connectorLabel}? People only in that directory lose access; their messages stay.`)) return;
-  await api(`/api/connections/${c.id}`, { method: "DELETE" }).catch((err) => showConnectError(err.message));
-  await renderConnections();
-}
-
-$("admin-token").addEventListener("change", (e) => {
-  try {
-    sessionStorage.setItem("crmchat-admin", e.target.value);
-  } catch {}
-  renderConnections();
-});
-$("connector-cancel").addEventListener("click", () => ($("connector-form").hidden = true));
-$("open-connect").addEventListener("click", openConnect);
-$("open-connect-signin").addEventListener("click", openConnect);
-document.querySelector("#connect [data-close]").addEventListener("click", () => $("connect").close());
-$("connect").addEventListener("close", () => (state.me ? startApp() : showSignin()));
 
 // ---------- boot ----------
 

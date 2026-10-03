@@ -51,33 +51,3 @@ export interface DirectoryConnector {
   /** Reads one page of people. Throws on any error; a failed page must never look like an empty directory. */
   listUsers(config: ConnectorConfig, ctx: ConnectorContext, cursor?: string): Promise<DirectoryPage>;
 }
-
-export class ConnectorError extends Error {
-  status?: number;
-  constructor(message: string, status?: number) {
-    super(message);
-    this.name = "ConnectorError";
-    this.status = status;
-  }
-}
-
-/** Shared GET-JSON helper: turns any non-2xx into a ConnectorError naming the directory and status. */
-export async function getJson<T>(ctx: ConnectorContext, label: string, url: string, headers: Record<string, string>): Promise<T> {
-  let res: Response;
-  try {
-    res = await ctx.fetch(url, { headers: { Accept: "application/json", ...headers } });
-  } catch (err) {
-    throw new ConnectorError(`${label}: could not reach ${new URL(url).host} (${(err as Error).message})`);
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    const hint = res.status === 401 || res.status === 403 ? " Check the credentials and their scopes." : "";
-    throw new ConnectorError(`${label} answered ${res.status}.${hint} ${body.slice(0, 200)}`.trim(), res.status);
-  }
-  return (await res.json()) as T;
-}
-
-export function requireFields(connector: DirectoryConnector, config: ConnectorConfig): void {
-  const missing = connector.fields.filter((f) => f.required && !config[f.key]?.trim()).map((f) => f.label);
-  if (missing.length) throw new ConnectorError(`${connector.label}: missing ${missing.join(", ")}`);
-}
