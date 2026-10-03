@@ -10,6 +10,7 @@ const syncMinutes = Number(env.SYNC_MINUTES ?? 15);
 const { server, connect, syncAll } = createApp({ adminToken: env.ADMIN_TOKEN || undefined });
 
 const fromEnv: [string, Record<string, string | undefined>][] = [
+  ["werdna", { baseUrl: env.WERDNA_URL, email: env.WERDNA_EMAIL, password: env.WERDNA_PASSWORD }],
   ["hubspot", { accessToken: env.HUBSPOT_ACCESS_TOKEN }],
   ["salesforce", { instanceUrl: env.SALESFORCE_INSTANCE_URL, accessToken: env.SALESFORCE_ACCESS_TOKEN }],
   ["google", { serviceAccountJson: env.GOOGLE_SERVICE_ACCOUNT_JSON, adminEmail: env.GOOGLE_ADMIN_EMAIL, domain: env.GOOGLE_DOMAIN }],

@@ -1,7 +1,7 @@
 // CRM Chat UI. Plain JS, no build step. Every piece of user or directory text goes through textContent.
 
 const $ = (id) => document.getElementById(id);
-const SOURCE_LABEL = { hubspot: "HubSpot", salesforce: "Salesforce", google: "Google", demo: "Demo" };
+const SOURCE_LABEL = { werdna: "Werdna", hubspot: "HubSpot", salesforce: "Salesforce", google: "Google", demo: "Demo" };
 
 const state = {
   me: null,
