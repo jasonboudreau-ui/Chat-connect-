@@ -61,6 +61,7 @@ function sourceBadges(sources) {
 
 function channelLabel(c) {
   if (c.kind === "dm") return state.people.get(c.peerId)?.name ?? "Direct message";
+  if (c.kind === "group") return c.title;
   return `# ${c.title}`;
 }
 
@@ -185,6 +186,12 @@ function renderSidebar() {
       ),
     );
 
+  $("groups").replaceChildren(
+    ...channels
+      .filter((c) => c.kind === "group" && matches(c.title))
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((c) => item(c, el("span", { class: "count" }, String(c.memberCount ?? "")))),
+  );
   $("channels").replaceChildren(
     ...channels.filter((c) => c.kind === "custom" && matches(c.title)).sort((a, b) => a.title.localeCompare(b.title)).map((c) => item(c)),
   );
@@ -240,7 +247,9 @@ async function openChannel(id) {
   else if (c.kind === "dm") {
     const p = state.people.get(c.peerId);
     sub.replaceChildren(p?.title ?? "", " ", ...(p ? sourceBadges(p.sources) : []));
-  } else sub.textContent = "Everyone in the company";
+  } else if (c.kind === "group") sub.textContent = groupSubtitle(c);
+  else sub.textContent = "Everyone in the company";
+  $("group-actions").hidden = c.kind !== "group";
   $("composer-text").placeholder = `Message ${channelLabel(c)}`;
   state.messages = await api(`/api/channels/${encodeURIComponent(id)}/messages`);
   renderSidebar();
@@ -253,7 +262,8 @@ function renderMessages() {
   const nodes = [];
   let prev = null;
   for (const m of state.messages) {
-    const author = state.people.get(m.authorId) ?? { name: "Former member", email: "" };
+    // Group messages carry their author, who may be from another company.
+    const author = state.people.get(m.authorId) ?? (m.author ? { ...m.author, title: m.author.company } : { name: "Former member", email: "" });
     const at = new Date(m.at);
     const grouped = prev && prev.authorId === m.authorId && at - new Date(prev.at) < 5 * 60_000;
     const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -284,6 +294,72 @@ function renderMessages() {
   box.replaceChildren(...nodes);
   box.scrollTop = box.scrollHeight;
 }
+
+// ---------- groups ----------
+
+function groupSubtitle(c) {
+  const people = `${c.memberCount} ${c.memberCount === 1 ? "person" : "people"}`;
+  return c.companies?.length > 1 ? `${people} from ${c.companies.join(", ")}` : people;
+}
+
+$("new-group").addEventListener("click", async () => {
+  const title = prompt("Name the group. You can invite people from any company next.");
+  if (!title) return;
+  try {
+    const g = await api("/api/groups", { method: "POST", body: { title } });
+    state.channels.set(g.id, g);
+    await openChannel(g.id);
+    openInvite();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+async function openInvite() {
+  const id = state.current;
+  const c = state.channels.get(id);
+  if (c?.kind !== "group") return;
+  const [info, candidates] = await Promise.all([
+    api(`/api/groups/${encodeURIComponent(id)}`),
+    api(`/api/groups/${encodeURIComponent(id)}/candidates`),
+  ]);
+  $("invite-title").textContent = `Invite people to ${c.title}`;
+  const waiting = info.invited.length ? ` Waiting for: ${info.invited.join(", ")}.` : "";
+  $("invite-members").textContent = `In the group: ${info.members.map((m) => `${m.name} (${m.company})`).join(", ")}.${waiting}`;
+  $("invite-pick").replaceChildren(
+    ...candidates.map((p) =>
+      el("label", { class: "pick-item" }, el("input", { type: "checkbox", value: p.email }), avatar(p), el("span", {}, el("strong", {}, p.name), el("span", { class: "muted small" }, ` ${p.company}`))),
+    ),
+  );
+  $("invite-pick").hidden = candidates.length === 0;
+  $("invite-emails").value = "";
+  $("invite-error").hidden = true;
+  $("invite-dialog").showModal();
+}
+
+$("group-invite").addEventListener("click", openInvite);
+$("invite-cancel").addEventListener("click", () => $("invite-dialog").close());
+$("invite-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const picked = [...$("invite-pick").querySelectorAll("input:checked")].map((i) => i.value);
+  const typed = $("invite-emails").value.split(/[\s,;]+/).filter(Boolean);
+  try {
+    await api(`/api/groups/${encodeURIComponent(state.current)}/invite`, { method: "POST", body: { emails: [...picked, ...typed] } });
+    $("invite-dialog").close();
+  } catch (err) {
+    $("invite-error").textContent = err.message;
+    $("invite-error").hidden = false;
+  }
+});
+
+$("group-leave").addEventListener("click", async () => {
+  const c = state.channels.get(state.current);
+  if (c?.kind !== "group" || !confirm(`Leave ${c.title}? You'll need a new invite to come back.`)) return;
+  await api(`/api/groups/${encodeURIComponent(c.id)}/leave`, { method: "POST" }).catch(() => {});
+  state.channels.delete(c.id);
+  await openChannel("general");
+  renderSidebar();
+});
 
 function showProfile(personId) {
   const p = state.people.get(personId);
@@ -379,7 +455,10 @@ function listen() {
         renderSidebar();
       }
     } else if (event.type === "channel") {
+      const fresh = !state.channels.has(event.channel.id);
       state.channels.set(event.channel.id, event.channel);
+      if (fresh && event.channel.kind === "group") state.unread.add(event.channel.id);
+      if (event.channel.id === state.current && event.channel.kind === "group") $("channel-sub").textContent = groupSubtitle(event.channel);
       renderSidebar();
     } else if (event.type === "presence") {
       state.online = new Set(event.online);

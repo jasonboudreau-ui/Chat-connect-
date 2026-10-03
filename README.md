@@ -16,7 +16,7 @@ node src/main.ts            # Node 22.18+ (runs the TypeScript directly)
 With no provider set up, only the made-up ten-person demo company is offered, so it runs with no credentials. Open
 two browser windows as two people to see messages, DMs and presence arrive live.
 
-Tests: `node --test "test/*.test.ts"` (34 tests, no network, no database).
+Tests: `node --test "test/*.test.ts"` (35 tests, no network, no database).
 
 ## Switching on "Log in with"
 
@@ -63,6 +63,14 @@ plain OAuth ones follow `hubspot.ts`.
 - **Login CSRF is blocked.** Each "Log in with" starts with a one-time state, nonce and PKCE secret in a short-lived
   cookie; a way back this browser did not start is refused.
 - **People are listed once they have logged in.** The chat keeps no copy of a company's staff list.
+
+## Groups across companies
+
+A company's own chat is walled off. A **group** is where companies meet: anyone can make one (＋ next to
+Groups) and invite people from their own company, from groups they already share, or anyone at all by email.
+An invited email joins the next time that person logs in, with whatever they use: the email their own system
+vouches for is what the invite waited for. Only members see a group, and each message shows the author's
+company. Groups live in memory for now, like messages.
 
 ## What this proof of concept does not do yet
 

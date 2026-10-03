@@ -37,6 +37,8 @@
       </div>
       <input id="people-search" class="search" type="search" placeholder="Find a person or channel" />
       <nav>
+        <div class="section"><span>Groups</span><button id="new-group" class="icon-btn small" title="New group: invite people from any company">＋</button></div>
+        <ul id="groups"></ul>
         <div class="section"><span>Channels</span><button id="new-channel" class="icon-btn small" title="New channel">＋</button></div>
         <ul id="channels"></ul>
         <div class="section" id="teams-head"><span>Teams</span><span class="hint" title="Created from your company's teams">auto</span></div>
@@ -54,6 +56,10 @@
           <h2 id="channel-title"></h2>
           <div id="channel-sub" class="muted small"></div>
         </div>
+        <div id="group-actions" class="head-actions" hidden>
+          <button id="group-invite" class="small">Invite</button>
+          <button id="group-leave" class="link small">Leave</button>
+        </div>
       </header>
       <div id="messages" class="messages" aria-live="polite"></div>
       <form id="composer" class="composer">
@@ -64,6 +70,22 @@
 
     <aside class="profile" id="profile" hidden></aside>
   </div>
+
+  <!-- Invite to a group: people you can already see, or anyone by email. Their own CRM checks who they are. -->
+  <dialog id="invite-dialog" class="dialog">
+    <form id="invite-form" method="dialog">
+      <h3 id="invite-title">Invite people</h3>
+      <div id="invite-members" class="muted small"></div>
+      <div id="invite-pick" class="pick"></div>
+      <label class="muted small" for="invite-emails">Or invite by email, from any company. They join the next time they log in, with whatever they use.</label>
+      <textarea id="invite-emails" rows="2" placeholder="jordan@acme.com, sam@globex.com"></textarea>
+      <p id="invite-error" class="error small" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="invite-cancel" class="link">Close</button>
+        <button type="submit" id="invite-send">Invite</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="/app.js"></script>
 </body>
