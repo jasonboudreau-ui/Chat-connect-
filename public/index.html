@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRM Chat</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Sign in: only people in a connected directory get in. -->
+  <main id="signin" class="signin" hidden>
+    <div class="signin-card">
+      <div class="brand"><span class="logo">◆</span> CRM Chat</div>
+      <h1>Sign in with your work email</h1>
+      <p class="muted">No sign-up here. If you are in your company's CRM or Google Workspace, you already have an account.</p>
+      <form id="signin-form">
+        <input id="signin-email" type="email" placeholder="you@company.com" autocomplete="email" required />
+        <button type="submit">Continue</button>
+      </form>
+      <p id="signin-error" class="error" hidden></p>
+      <div id="demo-people" hidden>
+        <p class="muted small">Trying the demo? Sign in as someone from the made-up company:</p>
+        <div id="demo-list" class="chips"></div>
+      </div>
+      <button id="open-connect-signin" class="link">Connect a directory</button>
+    </div>
+  </main>
+
+  <div id="app" class="app" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <div class="brand"><span class="logo">◆</span> CRM Chat</div>
+        <button id="open-connect" class="icon-btn" title="Connected directories">⚙</button>
+      </div>
+      <input id="people-search" class="search" type="search" placeholder="Find a person or channel" />
+      <nav>
+        <div class="section"><span>Channels</span><button id="new-channel" class="icon-btn small" title="New channel">＋</button></div>
+        <ul id="channels"></ul>
+        <div class="section"><span>Teams</span><span class="hint" title="Created and kept in sync from your directories">auto</span></div>
+        <ul id="teams"></ul>
+        <div class="section"><span>People</span></div>
+        <ul id="people"></ul>
+      </nav>
+      <div class="me" id="me"></div>
+    </aside>
+
+    <section class="main">
+      <header class="channel-head">
+        <button id="toggle-sidebar" class="icon-btn mobile-only" title="Menu">☰</button>
+        <div>
+          <h2 id="channel-title"></h2>
+          <div id="channel-sub" class="muted small"></div>
+        </div>
+      </header>
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <form id="composer" class="composer">
+        <textarea id="composer-text" rows="1" placeholder="Message" maxlength="4000"></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <aside class="profile" id="profile" hidden></aside>
+  </div>
+
+  <!-- Connect a directory -->
+  <dialog id="connect">
+    <div class="dialog-head">
+      <h2>Connected directories</h2>
+      <button class="icon-btn" data-close>✕</button>
+    </div>
+    <p class="muted">Everyone in a connected directory can sign in. Their teams become channels. Nothing is written back.</p>
+    <div id="admin-token-row" hidden>
+      <label>Admin token <input id="admin-token" type="password" /></label>
+    </div>
+    <div id="connect-error" class="error" hidden></div>
+    <ul id="connections" class="connections"></ul>
+    <h3>Add a directory</h3>
+    <div id="connector-cards" class="cards"></div>
+    <form id="connector-form" hidden>
+      <h3 id="connector-form-title"></h3>
+      <p id="connector-form-help" class="muted small"></p>
+      <div id="connector-fields"></div>
+      <div class="row">
+        <button type="submit" id="connector-submit">Connect and import people</button>
+        <button type="button" class="link" id="connector-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
