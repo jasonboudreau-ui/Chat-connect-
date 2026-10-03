@@ -353,7 +353,8 @@ export function createApp(options: AppOptions = {}) {
     }
     if (route === "GET /api/events") {
       const v = requireViewer(req);
-      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
+      // no-transform and X-Accel-Buffering keep proxies (Cloudflare, nginx) from compressing or holding back the stream.
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive" });
       res.write(": connected\n\n");
       streams.set(res, v);
       broadcast(v.ws, () => true, { type: "presence", online: online(v.ws) });

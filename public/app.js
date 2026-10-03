@@ -310,12 +310,31 @@ $("composer").addEventListener("submit", async (e) => {
   box.value = "";
   autosize();
   try {
-    await api(`/api/channels/${encodeURIComponent(state.current)}/messages`, { method: "POST", body: { text } });
+    addMessage(await api(`/api/channels/${encodeURIComponent(state.current)}/messages`, { method: "POST", body: { text } }));
   } catch (err) {
     box.value = text;
     alert(err.message);
   }
 });
+
+// A message can arrive twice (the reply to sending it, and the live stream), so each is shown once.
+function addMessage(m) {
+  if (m.channelId !== state.current || state.messages.some((x) => x.id === m.id)) return;
+  state.messages.push(m);
+  renderMessages();
+}
+
+// A safety net for proxies that hold back the live stream: catch up on the open channel every few seconds.
+setInterval(async () => {
+  if (!state.me || !state.current || document.hidden) return;
+  const id = state.current;
+  const latest = await api(`/api/channels/${encodeURIComponent(id)}/messages`).catch(() => null);
+  if (!latest || id !== state.current) return;
+  if (latest.length !== state.messages.length || latest.at(-1)?.id !== state.messages.at(-1)?.id) {
+    state.messages = latest;
+    renderMessages();
+  }
+}, 4000);
 
 function autosize() {
   const box = $("composer-text");
@@ -352,8 +371,7 @@ function listen() {
     const event = JSON.parse(e.data);
     if (event.type === "message") {
       if (event.message.channelId === state.current) {
-        state.messages.push(event.message);
-        renderMessages();
+        addMessage(event.message);
       } else {
         // Unseen activity: bold the channel until it is opened.
         if (!state.channels.has(event.message.channelId)) state.channels = new Map((await api("/api/channels")).map((x) => [x.id, x]));
