@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type Group, Groups, GROUP_PREFIX, type Member, normalEmail } from "./groups.ts";
 import { seal, unseal } from "./session.ts";
 import { pkce, randomToken } from "./signin/oauth.ts";
 import { type Identity, type RedirectProvider, type SignInContext, SignInError, type SignInProvider } from "./signin/types.ts";
@@ -151,6 +152,13 @@ export function createApp(options: AppOptions = {}) {
   }
   if (options.demo) workspace("demo", "Demo company", options.demo);
 
+  // Groups span companies, so they live beside the workspaces rather than in one.
+  const groups = new Groups();
+  groups.on((e) => {
+    const line = `data: ${JSON.stringify(e.type === "message" ? { type: "message", message: e.message } : { type: "channel", channel: groupView(e.group) })}\n\n`;
+    for (const [res, s] of streams) if (groups.isMember(e.group, s.person.email)) res.write(line);
+  });
+
   const online = (ws: Workspace) => [...new Set([...streams.values()].filter((s) => s.ws === ws).map((s) => s.person.id))];
 
   function broadcast(ws: Workspace, filter: (p: Person) => boolean, event: unknown) {
@@ -181,6 +189,35 @@ export function createApp(options: AppOptions = {}) {
       peerId,
       memberCount: c.kind === "team" ? ws.store.teamMembers(c).length : undefined,
     };
+  }
+
+  const memberOf = (v: { ws: Workspace; person: Person }): Member => ({ email: normalEmail(v.person.email), name: v.person.name, company: v.ws.name, avatarUrl: v.person.avatarUrl });
+
+  /** Someone who has logged in since the last start, in whichever company they did. */
+  function known(email: string): Member | undefined {
+    for (const ws of workspaces.values()) {
+      const person = ws.store.personByEmail(email);
+      if (person && isActive(person)) return memberOf({ ws, person });
+    }
+    return undefined;
+  }
+
+  function groupView(g: Group) {
+    const members = [...g.members.values()];
+    return {
+      id: g.id,
+      kind: "group",
+      title: g.title,
+      memberCount: members.length,
+      companies: [...new Set(members.map((m) => m.company))].sort(),
+    };
+  }
+
+  function visibleGroup(req: IncomingMessage, id: string) {
+    const v = requireViewer(req);
+    const group = groups.groups.get(id);
+    if (!group || !groups.isMember(group, v.person.email)) throw new HttpError(404, "No such group");
+    return { ...v, group, me: memberOf(v) };
   }
 
   /**
@@ -324,7 +361,8 @@ export function createApp(options: AppOptions = {}) {
     if (route === "GET /api/channels") {
       const { ws, person } = requireViewer(req);
       const list = [...ws.store.channels.values()].filter((c) => ws.store.canSee(person, c));
-      return send(res, 200, list.map((c) => channelView(ws, c, person)));
+      const mine = groups.forMember(memberOf({ ws, person }));
+      return send(res, 200, [...list.map((c) => channelView(ws, c, person)), ...mine.map(groupView)]);
     }
     if (route === "POST /api/channels") {
       const { ws, person } = requireViewer(req);
@@ -340,6 +378,55 @@ export function createApp(options: AppOptions = {}) {
       const other = ws.store.people.get(str(await readJson(req), "personId"));
       if (!other || !isActive(other)) throw new HttpError(404, "No such person");
       return send(res, 200, channelView(ws, ws.store.openDm(person, other), person));
+    }
+    if (route === "POST /api/groups") {
+      const v = requireViewer(req);
+      try {
+        return send(res, 201, groupView(groups.create(str(await readJson(req), "title"), memberOf(v))));
+      } catch (err) {
+        throw new HttpError(400, (err as Error).message);
+      }
+    }
+    if ((m = path.match(/^\/api\/groups\/([^/]+)(\/invite|\/leave|\/candidates)?$/))) {
+      const { ws, person, group, me } = visibleGroup(req, decodeURIComponent(m[1]));
+      const action = `${method} ${m[2] ?? ""}`;
+      if (action === "GET ") {
+        return send(res, 200, { ...groupView(group), members: [...group.members.values()], invited: [...group.invites] });
+      }
+      if (action === "GET /candidates") {
+        // People you can already see: your own company, and whoever you share another group with.
+        // Anyone else is invited by email, so nobody can browse another company's people.
+        const seen = new Map<string, Member>();
+        for (const p of ws.store.people.values()) if (isActive(p)) seen.set(normalEmail(p.email), memberOf({ ws, person: p }));
+        for (const g of groups.forMember(me)) for (const mem of g.members.values()) seen.set(mem.email, mem);
+        const list = [...seen.values()].filter((c) => !group.members.has(c.email) && !group.invites.has(c.email) && c.email !== me.email);
+        return send(res, 200, list.sort((a, b) => a.name.localeCompare(b.name)));
+      }
+      if (action === "POST /invite") {
+        const raw = (await readJson(req)).emails;
+        const emails = Array.isArray(raw) ? raw.filter((e): e is string => typeof e === "string").slice(0, 50) : [];
+        if (!emails.length) throw new HttpError(400, "Add at least one email");
+        try {
+          const added = groups.invite(group, emails, known);
+          return send(res, 200, { added, members: [...group.members.values()], invited: [...group.invites] });
+        } catch (err) {
+          throw new HttpError(400, (err as Error).message);
+        }
+      }
+      if (action === "POST /leave") {
+        groups.leave(group, person.email);
+        return send(res, 200, { ok: true });
+      }
+    }
+    if ((m = path.match(/^\/api\/channels\/([^/]+)\/messages$/)) && decodeURIComponent(m[1]).startsWith(GROUP_PREFIX)) {
+      const { group, me } = visibleGroup(req, decodeURIComponent(m[1]));
+      if (method === "GET") return send(res, 200, group.messages.slice(-200));
+      if (method === "POST") {
+        const text = str(await readJson(req), "text").trim();
+        if (!text) throw new HttpError(400, "Say something");
+        if (text.length > MAX_MESSAGE) throw new HttpError(400, `Keep it under ${MAX_MESSAGE} characters`);
+        return send(res, 201, groups.post(group, me, text));
+      }
     }
     if ((m = path.match(/^\/api\/channels\/([^/]+)\/messages$/))) {
       const { ws, person, channel } = visibleChannel(req, decodeURIComponent(m[1]));

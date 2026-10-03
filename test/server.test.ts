@@ -15,6 +15,7 @@ const PEOPLE: Record<string, { companyId: string; companyName: string; email: st
   bo: { companyId: "acme", companyName: "Acme", email: "bo@acme.com", name: "Bo" },
   cy: { companyId: "acme", companyName: "Acme", email: "cy@acme.com", name: "Cy" },
   zed: { companyId: "other", companyName: "Other Inc", email: "zed@other.com", name: "Zed" },
+  eve: { companyId: "third", companyName: "Third Co", email: "eve@third.com", name: "Eve" },
 };
 
 const idp: RedirectProvider = {
@@ -202,4 +203,50 @@ test("the demo company is its own space, reachable only through its quick sign-i
 test("a provider that is not switched on has no sign-in route", async () => {
   assert.equal((await call("/auth/google/start")).status, 404);
   assert.equal((await call("/auth/crm/start")).status, 404, "a password provider has no redirect");
+});
+
+test("groups span companies: invite by email or from people you can see, and only members see the group", async () => {
+  const ann = (await logIn("ann")).cookie;
+  const bo = (await logIn("bo")).cookie;
+  const zed = (await logIn("zed")).cookie;
+  const g = await call("/api/groups", { cookie: ann, body: { title: "Acme x Other" } });
+  assert.equal(g.status, 201);
+  const gid = encodeURIComponent(g.json.id);
+
+  // The picker offers Ann's own company, never another company's people she shares nothing with.
+  const before = (await call(`/api/groups/${gid}/candidates`, { cookie: ann })).json.map((p: { email: string }) => p.email);
+  assert.ok(before.includes("bo@acme.com"));
+  assert.ok(!before.includes("zed@other.com"));
+
+  // Zed has logged in (another company), so joins at once; Eve has not, so her invite waits for her.
+  const inv = await call(`/api/groups/${gid}/invite`, { cookie: ann, body: { emails: ["Zed@Other.com", "eve@third.com"] } });
+  assert.equal(inv.status, 200);
+  assert.deepEqual(inv.json.invited, ["eve@third.com"]);
+  assert.equal((await call(`/api/groups/${gid}/invite`, { cookie: ann, body: { emails: ["not an email"] } })).status, 400);
+
+  const zedSees = (await call("/api/channels", { cookie: zed })).json.find((c: { id: string }) => c.id === g.json.id);
+  assert.deepEqual(zedSees.companies, ["Acme", "Other Inc"]);
+  assert.equal((await call(`/api/channels/${gid}/messages`, { cookie: zed, body: { text: "hello from Other" } })).status, 201);
+  const annReads = (await call(`/api/channels/${gid}/messages`, { cookie: ann })).json;
+  assert.equal(annReads.at(-1).text, "hello from Other");
+  assert.equal(annReads.at(-1).author.company, "Other Inc");
+
+  // Bo is in Ann's company but not in the group: it does not exist for him.
+  assert.ok(!(await call("/api/channels", { cookie: bo })).json.some((c: { id: string }) => c.id === g.json.id));
+  assert.equal((await call(`/api/channels/${gid}/messages`, { cookie: bo })).status, 404);
+  assert.equal((await call(`/api/groups/${gid}/invite`, { cookie: bo, body: { emails: ["bo@acme.com"] } })).status, 404);
+
+  // Eve logs in for the first time; the email her company vouches for is what the invite waited for.
+  const eve = (await logIn("eve")).cookie;
+  assert.ok((await call("/api/channels", { cookie: eve })).json.some((c: { id: string }) => c.id === g.json.id));
+  assert.deepEqual((await call(`/api/groups/${gid}`, { cookie: ann })).json.invited, []);
+  // Someone in the same company through another provider is the same email, so the same member.
+  const dee = await call("/api/session/password", { body: { provider: "crm", email: "dee@acme.com", password: "right" } });
+  const deeCookie = `crmchat_session=${dee.cookies.crmchat_session}`;
+  assert.equal((await call(`/api/groups/${gid}/invite`, { cookie: ann, body: { emails: ["dee@acme.com"] } })).status, 200);
+  assert.ok((await call("/api/channels", { cookie: deeCookie })).json.some((c: { id: string }) => c.id === g.json.id));
+
+  // Leaving takes the group away.
+  assert.equal((await call(`/api/groups/${gid}/leave`, { cookie: zed, method: "POST", body: {} })).status, 200);
+  assert.equal((await call(`/api/channels/${gid}/messages`, { cookie: zed })).status, 404);
 });
